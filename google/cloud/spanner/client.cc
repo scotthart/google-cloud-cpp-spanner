@@ -115,6 +115,15 @@ Status Client::Rollback(Transaction transaction) {
   return conn_->Rollback({std::move(transaction)});
 }
 
+StatusOr<CommitResult> Client::RunTransaction(
+    std::function<Client::RunTransactionResult(spanner::Client,
+                                               spanner::Transaction)> const& fn,
+    Transaction::ReadWriteOptions const& opts) {
+  return internal::RunTransactionWithPolicies(
+      *this, opts, fn, internal::DefaultRunTransactionRetryPolicy(),
+      internal::DefaultRunTransactionBackoffPolicy());
+}
+
 std::shared_ptr<Connection> MakeConnection(Database const& db,
                                            ConnectionOptions const& options) {
   auto stub = internal::CreateDefaultSpannerStub(options);
@@ -153,6 +162,36 @@ StatusOr<CommitResult> RunTransactionImpl(
   return client.Commit(txn, *mutations);
 }
 
+StatusOr<CommitResult> RunTransactionImpl(
+    Client& client, Transaction::ReadWriteOptions const& opts,
+    std::function<Client::RunTransactionResult(Client, Transaction)> const& f) {
+  Transaction txn = MakeReadWriteTransaction(opts);
+  Client::RunTransactionResult status_mutations;
+#if GOOGLE_CLOUD_CPP_HAVE_EXCEPTIONS
+  try {
+#endif
+    status_mutations = f(client, txn);
+#if GOOGLE_CLOUD_CPP_HAVE_EXCEPTIONS
+  } catch (...) {
+    auto status = client.Rollback(txn);
+    if (!status.ok()) {
+      GCP_LOG(WARNING) << "Rollback() failure in RunTransaction(): "
+                       << status.message();
+    }
+    throw;
+  }
+#endif
+  if (!status_mutations.status.ok()) {
+    auto status = client.Rollback(txn);
+    if (!status.ok()) {
+      GCP_LOG(WARNING) << "Rollback() failure in RunTransaction(): "
+                       << status.message();
+    }
+    return status_mutations.status;
+  }
+  return client.Commit(txn, status_mutations.mutations);
+}
+
 }  // namespace
 
 namespace internal {
@@ -160,6 +199,30 @@ namespace internal {
 StatusOr<CommitResult> RunTransactionWithPolicies(
     Client client, Transaction::ReadWriteOptions const& opts,
     std::function<StatusOr<Mutations>(Client, Transaction)> const& f,
+    std::unique_ptr<RetryPolicy> retry_policy,
+    std::unique_ptr<BackoffPolicy> backoff_policy) {
+  Status last_status(
+      StatusCode::kFailedPrecondition,
+      "Retry policy should not be exhausted when retry loop starts");
+  char const* reason = "Too many failures in ";
+  while (!retry_policy->IsExhausted()) {
+    auto result = RunTransactionImpl(client, opts, f);
+    if (result) return result;
+    last_status = std::move(result).status();
+    if (!retry_policy->OnFailure(last_status)) {
+      if (internal::SafeGrpcRetry::IsPermanentFailure(last_status)) {
+        reason = "Permanent failure in ";
+      }
+      break;
+    }
+    std::this_thread::sleep_for(backoff_policy->OnCompletion());
+  }
+  return internal::RetryLoopError(reason, __func__, last_status);
+}
+
+StatusOr<CommitResult> RunTransactionWithPolicies(
+    Client client, Transaction::ReadWriteOptions const& opts,
+    std::function<Client::RunTransactionResult(Client, Transaction)> const& f,
     std::unique_ptr<RetryPolicy> retry_policy,
     std::unique_ptr<BackoffPolicy> backoff_policy) {
   Status last_status(

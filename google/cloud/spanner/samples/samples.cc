@@ -19,6 +19,7 @@
 #include "google/cloud/spanner/instance_admin_client.h"
 #include "google/cloud/internal/getenv.h"
 #include "google/cloud/internal/random.h"
+#include "google/cloud/status.h"
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -348,10 +349,9 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
 void DmlStandardInsert(google::cloud::spanner::Client client) {
   using google::cloud::StatusOr;
   namespace spanner = google::cloud::spanner;
-  auto commit_result = spanner::RunTransaction(
-      std::move(client), spanner::Transaction::ReadWriteOptions{},
-      [](spanner::Client client,
-         spanner::Transaction txn) -> StatusOr<spanner::Mutations> {
+  auto commit_result = client.RunTransaction(
+      [](spanner::Client client, spanner::Transaction txn)
+          -> google::cloud::spanner::Client::RunTransactionResult {
         auto insert = client.ExecuteSql(
             std::move(txn),
             spanner::SqlStatement(
@@ -359,8 +359,9 @@ void DmlStandardInsert(google::cloud::spanner::Client client) {
                 "  VALUES (10, 'Virginia', 'Watson')",
                 {}));
         if (!insert) return insert.status();
-        return spanner::Mutations{};
+        return google::cloud::Status();
       });
+
   if (!commit_result) {
     throw std::runtime_error(commit_result.status().message());
   }

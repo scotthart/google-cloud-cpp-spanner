@@ -374,6 +374,18 @@ class Client {
    */
   Status Rollback(Transaction transaction);
 
+  struct RunTransactionResult {
+    RunTransactionResult() = default;
+    RunTransactionResult(Status status, Mutations mutations = {})
+        : status(status), mutations(mutations) {}
+    Status status;
+    Mutations mutations;
+  };
+  StatusOr<CommitResult> RunTransaction(
+      std::function<RunTransactionResult(spanner::Client,
+                                         spanner::Transaction)> const& fn,
+      Transaction::ReadWriteOptions const& opts = {});
+
  private:
   std::shared_ptr<Connection> conn_;
 };
@@ -418,6 +430,12 @@ namespace internal {
 StatusOr<CommitResult> RunTransactionWithPolicies(
     Client client, Transaction::ReadWriteOptions const& opts,
     std::function<StatusOr<Mutations>(Client, Transaction)> const& f,
+    std::unique_ptr<RetryPolicy> retry_policy,
+    std::unique_ptr<BackoffPolicy> backoff_policy);
+
+StatusOr<CommitResult> RunTransactionWithPolicies(
+    Client client, Transaction::ReadWriteOptions const& opts,
+    std::function<Client::RunTransactionResult(Client, Transaction)> const& f,
     std::unique_ptr<RetryPolicy> retry_policy,
     std::unique_ptr<BackoffPolicy> backoff_policy);
 
