@@ -347,7 +347,6 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
 
 //! [START spanner_dml_standard_insert]
 void DmlStandardInsert(google::cloud::spanner::Client client) {
-  using google::cloud::StatusOr;
   namespace spanner = google::cloud::spanner;
   auto commit_result = client.RunTransaction(
       [](spanner::Client client, spanner::Transaction txn)
@@ -359,7 +358,7 @@ void DmlStandardInsert(google::cloud::spanner::Client client) {
                 "  VALUES (10, 'Virginia', 'Watson')",
                 {}));
         if (!insert) return insert.status();
-        return google::cloud::Status();
+        return {};
       });
 
   if (!commit_result) {
