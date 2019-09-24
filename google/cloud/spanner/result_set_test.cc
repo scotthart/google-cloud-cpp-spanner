@@ -16,6 +16,7 @@
 #include "google/cloud/spanner/internal/time.h"
 #include "google/cloud/spanner/timestamp.h"
 #include "google/cloud/internal/make_unique.h"
+#include <google/protobuf/text_format.h>
 #include <gmock/gmock.h>
 #include <chrono>
 #include <string>
@@ -29,13 +30,14 @@ namespace {
 namespace spanner_proto = ::google::spanner::v1;
 
 using ::google::cloud::internal::make_unique;
+using ::google::protobuf::TextFormat;
 using ::testing::Return;
 
 class MockResultSetSource : public internal::ResultSetSource {
  public:
   MOCK_METHOD0(NextValue, StatusOr<optional<Value>>());
-  MOCK_METHOD0(Metadata, optional<spanner_proto::ResultSetMetadata>());
-  MOCK_METHOD0(Stats, optional<spanner_proto::ResultSetStats>());
+  MOCK_CONST_METHOD0(Metadata, optional<spanner_proto::ResultSetMetadata>());
+  MOCK_CONST_METHOD0(Stats, optional<spanner_proto::ResultSetStats>());
 };
 
 TEST(ResultSet, IterateNoRows) {
@@ -155,18 +157,24 @@ TEST(ResultSet, TimestampPresent) {
   EXPECT_EQ(*result_set.ReadTimestamp(), timestamp);
 }
 
-TEST(ResultSet, Stats) {
-  // TODO(#217) this test is a placeholder until we decide on what type to
-  // return from Stats().
+#if 0
+TEST(ResulstSet, RowsModified) {
+  spanner_proto::ResultSetStats result_set_stats;
+    ASSERT_TRUE(TextFormat::ParseFromString(
+      R"pb(
+row_count_exact: 2
+      )pb",
+      &result_set_stats));
+
   auto mock_source = make_unique<MockResultSetSource>();
   EXPECT_CALL(*mock_source, Stats())
-      .WillOnce(Return(spanner_proto::ResultSetStats()));
+      .WillRepeatedly(Return(result_set_stats));
 
   ResultSet result_set(std::move(mock_source));
-  auto stats = result_set.Stats();
-  EXPECT_TRUE(stats.has_value());
+  ASSERT_TRUE(result_set.GetRowsModified());
+  EXPECT_EQ(2, *result_set.GetRowsModified());
 }
-
+#endif
 }  // namespace
 }  // namespace SPANNER_CLIENT_NS
 }  // namespace spanner

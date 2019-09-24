@@ -48,10 +48,10 @@ class PartialResultSetReader : public internal::ResultSetSource {
   ~PartialResultSetReader() override;
 
   StatusOr<optional<Value>> NextValue() override;
-  optional<google::spanner::v1::ResultSetMetadata> Metadata() override {
+  optional<google::spanner::v1::ResultSetMetadata> Metadata() const override {
     return metadata_;
   }
-  optional<google::spanner::v1::ResultSetStats> Stats() override {
+  optional<google::spanner::v1::ResultSetStats> Stats() const override {
     return stats_;
   }
 

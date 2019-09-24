@@ -32,21 +32,20 @@ class ResultSetSource {
   virtual ~ResultSetSource() = default;
   // Returns OK Status with no Value to indicate end-of-stream.
   virtual StatusOr<optional<Value>> NextValue() = 0;
-  virtual optional<google::spanner::v1::ResultSetMetadata> Metadata() = 0;
-  virtual optional<google::spanner::v1::ResultSetStats> Stats() = 0;
+  virtual optional<google::spanner::v1::ResultSetMetadata> Metadata() const = 0;
+  virtual optional<google::spanner::v1::ResultSetStats> Stats() const = 0;
 };
 }  // namespace internal
 
+class QueryPlan {
+
+};
+
 /**
- * Represents the result of a query operation, such as `SpannerClient::Read()`
- * or `SpannerClient::ExecuteSql()`.
- *
- * This class encapsulates the result of a Cloud Spanner query, including all
- * DML operations, i.e., `UPDATE` and `DELETE` also return a `ResultSet`.
+ * Represents the result of a `SpannerClient::Read()` operation.
  *
  * Note that a `ResultSet` returns both the data for the operation, as a
- * single-pass, input range returned by `Rows()`, as well as the metadata for
- * the results, and execution statistics (if requested).
+ * single-pass, input range returned by `Rows()`.
  */
 class ResultSet {
  public:
@@ -54,7 +53,7 @@ class ResultSet {
   explicit ResultSet(std::unique_ptr<internal::ResultSetSource> source)
       : source_(std::move(source)) {}
 
-  // This class is moveable but not copyable.
+  // This class is movable but not copyable.
   ResultSet(ResultSet&&) = default;
   ResultSet& operator=(ResultSet&&) = default;
 
@@ -77,29 +76,79 @@ class ResultSet {
    * Only available if a read-only transaction was used, and the timestamp
    * was requested by setting `return_read_timestamp` true.
    */
-  optional<Timestamp> ReadTimestamp() const {
-    auto metadata = source_->Metadata();
-    if (metadata.has_value() && metadata->has_transaction() &&
-        metadata->transaction().has_read_timestamp()) {
-      return internal::FromProto(metadata->transaction().read_timestamp());
-    }
-    return optional<Timestamp>();
-  }
-
-  /**
-   * Return statistics about the transaction.
-   *
-   * Statistics are only available for SQL requests with `query_mode` set to
-   * `PROFILE`, and only after consuming the entire result stream (i.e.
-   * iterating through `Rows()` until the end).
-   */
-  optional<google::spanner::v1::ResultSetStats> Stats() {
-    return source_->Stats();
-  }
+  optional<Timestamp> ReadTimestamp() const;
 
  private:
   std::unique_ptr<internal::ResultSetSource> source_;
 };
+
+/**
+ * Represents the result of a `SpannerClient::ExecuteSql()` operation.
+ *
+ * This class encapsulates the result of a Cloud Spanner query, including all
+ * DML operations, i.e., `UPDATE` and `DELETE` also return a `SqlResultSet`.
+ *
+ * Note that a `SqlResultSet` returns both the data for the operation, as a
+ * single-pass, input range returned by `Rows()`, as well as the metadata for
+ * the results, and execution statistics (if requested).
+ */
+class SqlResultSet {
+ public:
+  SqlResultSet() = default;
+  explicit SqlResultSet(std::unique_ptr<internal::ResultSetSource> source)
+      : source_(std::move(source)) {}
+
+  // This class is movable but not copyable.
+  SqlResultSet(SqlResultSet&&) = default;
+  SqlResultSet& operator=(SqlResultSet&&) = default;
+
+  /**
+   * Returns a `RowParser` which can be used to iterate the returned `Row`s.
+   *
+   * Since there is a single result stream for each `ResultSet` instance, users
+   * should not use multiple `RowParser`s from the same `ResultSet` at the same
+   * time. Doing so is not thread safe, and may result in errors or data
+   * corruption.
+   */
+  template <typename... Ts>
+  RowParser<Ts...> Rows() {
+    return RowParser<Ts...>([this]() mutable { return source_->NextValue(); });
+  }
+
+  /**
+   * Retrieve the timestamp at which the read occurred.
+   *
+   * Only available if a read-only transaction was used, and the timestamp
+   * was requested by setting `return_read_timestamp` true.
+   */
+  optional<Timestamp> ReadTimestamp() const;
+
+  /**
+   * Returns the number of rows modified by the DML statement.
+   *
+   * @note Partitioned DML only provides a lower bound of the rows modified, all
+   * other DML statements provide an exact count.
+   */
+  optional<int64_t> GetRowsModified() const;
+
+  /**
+   * Returns a collection of key value pair statistics for the query execution.
+   *
+   * @note Only available when the query is profiled.
+   */
+  optional<std::unordered_map<std::string, std::string>> GetQueryStats() const;
+
+  /**
+   * Returns the plan of execution for the query.
+   *
+   * @note
+   */
+  optional<QueryPlan> GetQueryPlan() const;
+
+ private:
+  std::unique_ptr<internal::ResultSetSource> source_;
+};
+
 
 }  // namespace SPANNER_CLIENT_NS
 }  // namespace spanner
