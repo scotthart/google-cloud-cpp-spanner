@@ -300,10 +300,16 @@ StatusOr<ResultSet> ConnectionImpl::ExecuteSqlImpl(
     request.set_partition_token(*std::move(esp.partition_token));
   }
 
-  auto context = google::cloud::internal::make_unique<grpc::ClientContext>();
-  auto rpc =
-      google::cloud::internal::make_unique<DefaultPartialResultSetReader>(
-          std::move(context), stub_->ExecuteStreamingSql(*context, request));
+  auto const& stub = stub_;
+  auto factory = [stub, request](std::string const& resume_token) mutable {
+    request.set_resume_token(resume_token);
+    auto context = google::cloud::internal::make_unique<grpc::ClientContext>();
+    return google::cloud::internal::make_unique<DefaultPartialResultSetReader>(
+          std::move(context), stub->ExecuteStreamingSql(*context, request));
+  };
+  auto rpc = google::cloud::internal::make_unique<PartialResultSetResume>(
+      std::move(factory), Idempotency::kIdempotent, retry_policy_->clone(),
+      backoff_policy_->clone());
   auto reader = internal::PartialResultSetSource::Create(std::move(rpc));
   if (!reader.ok()) {
     return std::move(reader).status();
