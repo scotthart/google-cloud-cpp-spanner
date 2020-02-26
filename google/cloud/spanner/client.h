@@ -353,11 +353,23 @@ class Client {
   /**
    * Executes a SQL DML statement.
    *
+   * Handles operations inside the read-write transaction that might return
+   * `ABORTED`. If this the transaction is restarted from the beginning.
+   *
+   * @param statement The SQL statement to execute.
+   *
+   * @return Return the last DmlResult received in the case of retries.
+   */
+  StatusOr<DmlResult> ExecuteDml(SqlStatement statement);
+
+  /**
+   * Executes a SQL DML statement.
+   *
    * Operations inside read-write transactions might return `ABORTED`. If this
    * occurs, the application should restart the transaction from the beginning.
    *
    * @note Single-use transactions are not supported with DML statements.
-
+   *
    * @param transaction Execute this query as part of an existing transaction.
    * @param statement The SQL statement to execute.
    */
@@ -374,7 +386,7 @@ class Client {
    * occurs, the application should restart the transaction from the beginning.
    *
    * @note Single-use transactions are not supported with DML statements.
-
+   *
    * @param transaction Execute this query as part of an existing transaction.
    * @param statement The SQL statement to execute.
    */
@@ -391,7 +403,7 @@ class Client {
    * occurs, the application should restart the transaction from the beginning.
    *
    * @note Single-use transactions are not supported with DML statements.
-
+   *
    * @param transaction Execute this query as part of an existing transaction.
    * @param statement The SQL statement to execute.
    */

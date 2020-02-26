@@ -139,6 +139,19 @@ StatusOr<std::vector<QueryPartition>> Client::PartitionQuery(
       {std::move(transaction), std::move(statement), partition_options});
 }
 
+StatusOr<DmlResult> Client::ExecuteDml(SqlStatement statement) {
+  StatusOr<spanner::DmlResult> dml_result;
+  auto commit_result =
+      Commit([this, &statement, &dml_result](
+                 spanner::Transaction txn) -> StatusOr<spanner::Mutations> {
+        dml_result =
+            this->ExecuteDml(std::move(txn), spanner::SqlStatement(statement));
+        if (!dml_result) return dml_result.status();
+        return spanner::Mutations{};
+      });
+  return dml_result;
+}
+
 StatusOr<DmlResult> Client::ExecuteDml(Transaction transaction,
                                        SqlStatement statement) {
   return conn_->ExecuteDml(
